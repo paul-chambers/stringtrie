@@ -9,24 +9,33 @@
 
 int main( int argc, char * argv[] )
 {
-    tStrTrie * trie = newStrTrie();
+    tStringTrie * trie = newStringTrie();
 
     fprintf( stderr, "%p\n", trie );
-    if ( trie != NULL )
-    {
-        fprintf( stderr, "   alpha: %p\n", newStrFrag( trie,   "alpha", 5 ));
-        fprintf( stderr, "    beta: %p\n", newStrFrag( trie,    "beta", 4 ));
-        fprintf( stderr, "   gamma: %p\n", newStrFrag( trie,   "gamma", 5 ));
-        fprintf( stderr, "   delta: %p\n", newStrFrag( trie,   "delta", 5 ));
-        fprintf( stderr, " epsilon: %p\n", newStrFrag( trie, "epislon", 7 ));
-    }
-    for ( int offset = 0; offset < trie->nextFreeOfst; offset += 32 )
-    {
-        fputc( '"', stderr );
-        fwrite( &trie->strings[offset], 32, 1, stderr);
-        fputc( '"', stderr );
-        fputc( '\n', stderr );
-    }
+    if ( trie == NULL ) return -1;
+
+    stringTrieAdd( trie, "gamma]ten",   "four" );
+    stringTrieAdd( trie, "gamma]ten",   "four" );
+    stringTrieAdd( trie, "gamma]nine",   "four" );
+    stringTrieAdd( trie, "gamma]nine",   "four" );
+    stringTrieAdd( trie, "epsilon}seven", "five" );
+    stringTrieAdd( trie, "epsilon}seven", "five" );
+    stringTrieAdd( trie, "epsilon}eight", "five" );
+    stringTrieAdd( trie, "epsilon}eight", "five" );
+    stringTrieAdd( trie, "delta>six",   "three" );
+    stringTrieAdd( trie, "delta>six",   "three" );
+    stringTrieAdd( trie, "delta>five",   "three" );
+    stringTrieAdd( trie, "delta>five",   "three" );
+    stringTrieAdd( trie, "beta=three",    "two" );
+    stringTrieAdd( trie, "beta=three",    "two" );
+    stringTrieAdd( trie, "beta=four",    "two" );
+    stringTrieAdd( trie, "beta=four",    "two" );
+    stringTrieAdd( trie, "alpha,two,violet",   "one" );
+    stringTrieAdd( trie, "alpha,two,blue",   "one" );
+    stringTrieAdd( trie, "alpha,onion-red",   "one" );
+    stringTrieAdd( trie, "alpha,one-red",   "one" );
+
+    stringTrieDump( trie );
 
     return 0;
 }

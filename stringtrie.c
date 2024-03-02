@@ -7,11 +7,54 @@
 
 #include <stdio.h>
 
-#include <errno.h>
-#include <memory.h>
+#include "stringtrie.h"
 
-#include "libstringtrie.h"
+typedef struct {
+//  tTrieIndex              parent;         // zero indicates the root of the tree
+    tTrieIndex              next;           // linked list of siblings (same level)
+    tTrieIndex              children;       // first element of linked list of children (down one level)
 
+    tStringSegmentOffset    start;          // start of string segment
+    tSringSegmentLength     length;         // string segment length
+
+    tTrieValue *            value;          // the associated value, if this is the tail of an exact match
+} tTrieNode;
+
+enum tConstRadixIndex {
+    freeIndex     = 0,
+    rootIndex     = 1,
+    firstFreeNode = 2
+};
+
+typedef struct sStringTrie {
+    tTrieKey *            stringSpace;
+    tStringSegmentOffset  size;
+    tStringSegmentOffset  highWater;
+    cbStringTrieDumpValue cbDumpValue;
+
+    tSringSegmentLength   nodeCount;
+    tTrieNode *           nodeArray;
+} tStringTrie;
+
+typedef struct sStringTrieIterator {
+    tStringTrie *         tree;
+    tSringSegmentLength   depth;
+    tTrieIndex *          stack;
+} tStringTrieIterator;
+
+
+const char * describeStringTrieError( tStringTrieError error )
+{
+    static const char * stringTrieErrorAsString[] = {
+        [errorSuccess]           = "successful",
+        [errorInvalidParameter]  = "invalid parameter",
+        [errorKeyExists]         = "key exists",
+        [errorKeyNotFound]       = "key not found"
+    };
+
+    return ( error >= 0 && error < stringTrieErrorMax ?
+             stringTrieErrorAsString[error] : "(value out of range)" );
+}
 
 tStringTrie * newStringTrie( void )
 {
@@ -45,9 +88,17 @@ tStringTrie * newStringTrie( void )
     return tree;
 }
 
-tRadixIterator * newTrieIterator( const char * path )
+void freeStringTrie( tStringTrie * tree )
 {
-    tRadixIterator * iterator = calloc( 1, sizeof(tRadixIterator) );
+    free( tree->stringSpace );
+    free( tree->nodeArray );
+    free( tree );
+}
+
+
+tStringTrieIterator * newTrieIterator( const char * path )
+{
+    tStringTrieIterator * iterator = calloc( 1, sizeof(tStringTrieIterator) );
 
     if ( iterator != NULL )
     {
@@ -62,7 +113,7 @@ tRadixIterator * newTrieIterator( const char * path )
     return iterator;
 }
 
-void freeTrieInterator( tRadixIterator * iterator )
+void freeTrieInterator( tStringTrieIterator * iterator )
 {
     if ( iterator != NULL )
     {
@@ -78,7 +129,7 @@ void freeTrieInterator( tRadixIterator * iterator )
  * @param iterator
  * @return the next tTrieValue stored in the tree
  */
-tTrieValue * radixNext( tRadixIterator * iterator )
+tTrieValue * stringTrieNext( tStringTrieIterator * iterator )
 {
     if ( iterator == NULL ) return NULL;
 
@@ -97,7 +148,31 @@ tTrieValue * radixNext( tRadixIterator * iterator )
     return NULL;
 }
 
+void setStringTrieDumpValue( tStringTrie * tree, cbStringTrieDumpValue valueCB )
+{
+    tree->cbDumpValue = valueCB;
+}
 
+
+int stringTrieDumpStringValue( const tStringTrie * tree,
+                                       tTrieValue * value,
+                                       char * outputStringBuffer,
+                                       size_t outputStringBufferSize,
+                                       tTrieOpaque * opaque )
+{
+    strncpy( outputStringBuffer, value, outputStringBufferSize );
+    return (0);
+}
+
+int stringTrieDumpIntValue( const tStringTrie * tree,
+                            tTrieValue * value,
+                            char * outputStringBuffer,
+                            size_t outputStringBufferSize,
+                            tTrieOpaque * opaque )
+{
+    snprintf( outputStringBuffer, outputStringBufferSize, "%d", *(int *)value );
+    return (0);
+}
 
 /**
  *
@@ -106,11 +181,16 @@ tTrieValue * radixNext( tRadixIterator * iterator )
  * @param depth
  */
 
-static const char * leader = "  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .";
+static const char * leader = "  +-------------------------------";
 
-static void recursTreeDump( const tStringTrie * tree, tTrieIndex nodeIndex, int depth )
+static void recursTreeDump( const tStringTrie * tree,
+                            tTrieIndex nodeIndex,
+                            int depth,
+                            tTrieOpaque * opaque )
 {
     if ( depth > 20 ) return;
+
+    char valueAsString[1024];
 
     while ( nodeIndex != 0 )
     {
@@ -118,30 +198,42 @@ static void recursTreeDump( const tStringTrie * tree, tTrieIndex nodeIndex, int 
 
         fprintf( stderr, "%.*s [%02u] \'", depth*3, leader, nodeIndex );
         fwrite( &tree->stringSpace[ node->start ], node->length, 1, stderr );
-        fprintf( stderr, "\'\n" );
+        fputc( '\'', stderr );
+        if ( tree->cbDumpValue != NULL && node->value != NULL )
+        {
+            memset( valueAsString, '\0', sizeof(valueAsString) );
+            (*tree->cbDumpValue)( tree, node->value, valueAsString, sizeof(valueAsString), opaque );
+            if ( valueAsString[0] != '\0' )
+            {
+                fprintf( stderr, " = %s", valueAsString );
+            }
+        }
+        fputc( '\n', stderr );
 
         if ( node->children != 0 )
         {
-            recursTreeDump(tree, node->children, depth + 1);
+            recursTreeDump( tree, node->children, depth + 1, opaque );
         }
 
         nodeIndex = node->next;
     }
 }
 
-void stringTrieDump( const tStringTrie * tree )
+void stringTrieDump( const tStringTrie * tree, tTrieOpaque * opaque )
 {
     tTrieIndex nodeIndex = tree->nodeArray[rootIndex].children;
     if ( nodeIndex == 0 )
     {
-        logDebug("{empty}");
+        /* the root node has no children, therefore the tree is empty */
+        fprintf(stderr,"{empty}\n");
     }
     else
     {
-        recursTreeDump( tree, nodeIndex, 0 );
+        recursTreeDump( tree, nodeIndex, 0, opaque );
     }
 }
 
+#if 0
 /**
  * Given a node index, return the key that refers to it.
  * @param tree
@@ -149,7 +241,7 @@ void stringTrieDump( const tStringTrie * tree )
  * @param key a pointer to a pointer to the key. free() the pointer when you're done.
  * @return zero if no error, and in key, a pointer to the rebuilt key. returns a negative number on error.
  */
-int radixGetKey( const tStringTrie * tree, tTrieIndex nodeIndex, tTrieKey **key )
+int stringTrieGetKey( const tStringTrie * tree, tTrieIndex nodeIndex, tTrieKey **key )
 {
     unsigned int    depth  = 0;
     tSringSegmentLength    length = 0;    // leave space for the trailing null
@@ -216,6 +308,7 @@ int radixGetKey( const tStringTrie * tree, tTrieIndex nodeIndex, tTrieKey **key 
 
     return 0;
 }
+#endif
 
 /**
  * We're out of free nodes, so add more
@@ -280,10 +373,49 @@ static void guaranteeStringSpace( tStringTrie * tree, tSringSegmentLength length
     }
 }
 
-tTrieIndex radixAddChild( tStringTrie * tree, tTrieIndex parentIndex, const tTrieKey * key, tTrieValue * value )
+
+// Shorten the existing node/segment to cover only the part that matched,
+// and create a new child node for the trailing part that didn't match.
+static tStringTrieError splitNode( tStringTrie * tree, tTrieIndex originalNodeIndex, tSringSegmentLength matchLen )
+{
+
+    /* make the code easier to read (and help the compiler) */
+    tTrieNode * prefixNode = &tree->nodeArray[originalNodeIndex];
+
+    tTrieIndex newNodeIndex = nextFreeNode( tree );
+    tTrieNode * suffixNode = &tree->nodeArray[newNodeIndex];
+
+     /* set up the segment of the new suffix node to the part after the match diverges */
+    suffixNode->start  = prefixNode->start + matchLen;
+    suffixNode->length = prefixNode->length - matchLen;
+    /* shorten the existing node so it only holds the matched prefix */
+    prefixNode->length = matchLen;
+
+    /* since it's an internal split, the value moves from the prefix node to the suffix */
+    suffixNode->value = prefixNode->value;
+    prefixNode->value = NULL; /* not the last node of an exact match, so there's no value */
+
+    /* establish the new suffix node as the child of the existing node we're truncating to
+     * a prefix, and move any existing children from the existing node to the new suffix */
+    suffixNode->children = prefixNode->children;
+    prefixNode->children = newNodeIndex;
+    /* existing node becomes the parent of the new node */
+//  suffixNode->parent   = originalNodeIndex;
+    /* update all the existing children to have the new node be their parent */
+//  for ( tTrieIndex child = suffixNode->children; child != 0; child = tree->nodeArray[child].next ) { }
+
+    logDebug("split node:  [%02u] \'%.*s\' | [%02u] \'%.*s\'",
+             originalNodeIndex, prefixNode->length, &tree->stringSpace[prefixNode->start],
+             newNodeIndex, suffixNode->length, &tree->stringSpace[suffixNode->start] );
+
+    return errorSuccess;
+}
+
+static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, const tTrieKey * key, tTrieValue * value )
 {
     tTrieIndex newNodeIndex;
-    // logDebug("add child \'%s\' to [%02u]", key, parentIndex);
+
+    logDebug("add child \'%s\' to [%02u]", key, parentIndex);
     tSringSegmentLength length = (tSringSegmentLength)strlen( key );
 
     guaranteeStringSpace( tree, length );
@@ -292,7 +424,7 @@ tTrieIndex radixAddChild( tStringTrie * tree, tTrieIndex parentIndex, const tTri
     tTrieNode * newNode = &tree->nodeArray[newNodeIndex];
 
     // set up the new node
-    newNode->parent  = parentIndex;
+//  newNode->parent  = parentIndex;
     newNode->start   = tree->highWater;
     newNode->length  = length;
     newNode->value   = value;
@@ -304,58 +436,23 @@ tTrieIndex radixAddChild( tStringTrie * tree, tTrieIndex parentIndex, const tTri
     newNode->next = tree->nodeArray[parentIndex].children;
     tree->nodeArray[parentIndex].children = newNodeIndex;
 
-    return newNodeIndex;
+    return errorSuccess;
 }
 
-// Shorten the existing node/segment to cover only the part that matched,
-// and create a new child node for the trailing part that didn't match.
-tError splitNode( tStringTrie *tree, tTrieIndex originalNodeIndex, tSringSegmentLength matchLen )
-{
-    tTrieIndex newChildIndex = nextFreeNode( tree);
-
-    // make the code easier to read (and help the compiler)
-    tTrieNode *newChild = &tree->nodeArray[newChildIndex];
-    tTrieNode *originalNode = &tree->nodeArray[originalNodeIndex];
-
-    // ### split the segment
-// child inherits the segment from the point of divergence
-    newChild->start = originalNode->start + matchLen;
-    // set its length to that of the unmatched part
-    newChild->length = originalNode->length - matchLen;
-    // shorten the length to that of the matched part (i.e. trim the tail part that didn't match)
-    originalNode->length = matchLen;
-
-    // the original node is the parent of this new node
-    newChild->parent = originalNodeIndex;
-    // the new child has no siblings yet. radixAddChild() will change that in a minute
-    newChild->next = 0;
-    // inherit the original node's children
-    newChild->children = originalNode->children;
-    // this new child is the now the only child of the original node (not for long)
-    originalNode->children = newChildIndex;
-
-#if 0
-    logDebug("split node:  [%02u] \'%.*s\'  [%02u] \'%.*s\'",
-             originalNodeIndex, originalNode->length, &tree->stringSpace[originalNode->start],
-             newChildIndex, newChild->length, &tree->stringSpace[newChild->start]);
-#endif
-
-    return 0;
-}
-
-tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * value )
+tStringTrieError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value )
 {
     tTrieIndex nodeIndex = tree->nodeArray[rootIndex].children;
     // handle adding the first child of the root - i.e. the
     // degenerate case of the tree being completely empty
     if (nodeIndex == 0 )
     {
-        return radixAddChild( tree, rootIndex, key, value );
+        return addChild( tree, rootIndex, key, *value );
     }
 
     const tTrieKey * k = key;
 
-    tTrieIndex parent = tree->nodeArray[nodeIndex].parent;
+    // tTrieIndex parent = tree->nodeArray[nodeIndex].parent;
+    tTrieIndex parent = rootIndex;
     while (nodeIndex != 0 )
     {
         tStringSegmentOffset start  = tree->nodeArray[nodeIndex].start;
@@ -367,7 +464,7 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
 
         if ( offset == start )
         {
-            // even the first character didn't match, so try the next sibling
+            // the first character didn't match, so try the next sibling
             if ( tree->nodeArray[nodeIndex].next != 0 )
             {
                 // parent hasn't changed
@@ -377,7 +474,7 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
             else
             {
                 // we're run out of siblings, so add the remainder of the key as a child of the parent
-                return radixAddChild( tree, parent, k, value );
+                return addChild( tree, parent, k, *value );
             }
         }
         else
@@ -388,6 +485,7 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
                 // there was a partial match inside an existing segment, so we need
                 // to split the original node/segment at the point they diverge
                 splitNode(tree, nodeIndex, (tSringSegmentLength) (offset - start));
+
             }
 
             // at this point, nodeIndex points at the last node that matched completely,
@@ -399,14 +497,15 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
                 // that was split earlier, and so does not have a value set.
                 if ( tree->nodeArray[nodeIndex].value == NULL )
                 {
-                    tree->nodeArray[nodeIndex].value = value;
-                    return 0;
+                    tree->nodeArray[nodeIndex].value = *value;
+                    return errorSuccess;
                 }
                 else
                 {
                     // this node has a value already, so this add was for a key that already existed
                     logDebug("The key \'%s\' already exists", key);
-                    return -EEXIST;
+                    *value = tree->nodeArray[nodeIndex].value;
+                    return errorKeyExists;
                 }
             }
 
@@ -416,7 +515,7 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
             if ( tree->nodeArray[nodeIndex].children == 0 )
             {
                 // no children below this point, so add the key remainder as the first child of this node
-                return radixAddChild(tree, nodeIndex, k, value );
+                return addChild( tree, nodeIndex, k, value );
             }
             else
             {
@@ -427,10 +526,10 @@ tError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * val
         }
     }
 
-    return -EINVAL;
+    return errorInvalidParameter;
 }
 
-tError stringTrieFind( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value )
+tStringTrieError stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value )
 {
     tTrieIndex nodeIndex = tree->nodeArray[rootIndex].children;
 
@@ -452,7 +551,7 @@ tError stringTrieFind( tStringTrie * tree, const tTrieKey * key, tTrieValue ** v
                 // run around the loop again
             } else {
                 // we're run out of siblings, so there's no match
-                return -ENOKEY;
+                return errorKeyNotFound;
             }
         } else {
             do {
@@ -464,7 +563,7 @@ tError stringTrieFind( tStringTrie * tree, const tTrieKey * key, tTrieValue ** v
             if ( offset < end )
             {
                 // there was a partial match inside an existing segment, so the key wasn't found
-                return -ENOKEY;
+                return errorKeyNotFound;
             }
 
             // at this point, nodeIndex points at the last node that matched completely
@@ -472,7 +571,7 @@ tError stringTrieFind( tStringTrie * tree, const tTrieKey * key, tTrieValue ** v
             {
                 // reached the end of the key, so we have found what we're looking for
                 *value = tree->nodeArray[nodeIndex].value;
-                return 0;
+                return errorSuccess;
             }
 
             // we're matched so far, but we haven't reached the end of the key
@@ -482,5 +581,5 @@ tError stringTrieFind( tStringTrie * tree, const tTrieKey * key, tTrieValue ** v
         }
     }
 
-    return -ENOKEY;
+    return errorKeyNotFound;
 }

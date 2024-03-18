@@ -13,7 +13,7 @@ typedef unsigned short  tSringSegmentLength;    // length of the string segment 
 typedef unsigned short  tTrieNodeCount;
 typedef unsigned short  tTrieIndex;         // index into nodeArray
 typedef char            tTrieKey;           // a C-style string
-typedef void            tTrieValue;         // an arbitrary pointer to some data structure
+typedef int             tTrieValue;         // a pointer to some arbitrary data structure
 typedef void            tTrieOpaque;        // for user-supplied private value, passed to callback
 
 typedef struct sStringTrie tStringTrie;
@@ -34,9 +34,9 @@ void                freeStringTrie( tStringTrie * tree );
 tStringTrieError    stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value );
 tStringTrieError    stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value );
 
-tStringTrieIterator *   newTrieIterator( const char * path );
+tStringTrieIterator *   newTrieIterator( tStringTrie * tree, const char * path );
 void                    freeTrieInterator( tStringTrieIterator * iterator );
-tTrieValue *            trieNext( tStringTrieIterator * iterator );
+tTrieValue *            trieIteratorNext( tStringTrieIterator * iterator );
 
 typedef int (* cbStringTrieDumpValue)( const tStringTrie * tree,
                                        tTrieValue * value,

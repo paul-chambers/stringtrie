@@ -10,31 +10,31 @@
 int main( int argc, char * argv[] )
 {
     static struct {
-        const char * key;
-        const char * value;
-        tStringTrieError       err;
+        const char *      key;
+        const char *      value;
+        tStringTrieError  err;
     } testData[] = {
-        { "alpha,one-red",    "twenty" },
-        { "alpha,onion-red",  "nineteen" },
-        { "alpha,two,blue",   "eighteen" },
-        { "alpha,two,violet", "seventeen" },
-        { "beta=five",        "fifteen" },
-        { "beta=four",        "sixteen" },
-        { "beta=three",       "fourteen" },
-        { "beta=two",         "thirteen" },
-        { "delta>five",       "eleven" },
-        { "delta>five",       "twelve" },
-        { "delta>six",        "nine" },
-        { "delta>seven",      "ten" },
-        { "epsilon}eight",    "eight" },
-        { "epsilon}eight",    "seven" },
-        { "epsilon}seven",    "five" },
-        { "epsilon}seven",    "six" },
-        { "gamma]eight",      "four" },
-        { "gamma]eleven",     "one" },
-        { "gamma]nine",       "three" },
-        { "gamma]ten",        "two" },
-        { "missing",          NULL },
+        { "alpha,one-red",    "twenty",    errorSuccess   },
+        { "alpha,onion-red",  "nineteen",  errorSuccess   },
+        { "alpha,two,blue",   "eighteen",  errorSuccess   },
+        { "alpha,two,violet", "seventeen", errorSuccess   },
+        { "beta=five",        "fifteen",   errorSuccess   },
+        { "beta=four",        "sixteen",   errorSuccess   },
+        { "beta=three",       "fourteen",  errorSuccess   },
+        { "beta=two",         "thirteen",  errorSuccess   },
+        { "delta>five",       "eleven",    errorSuccess   },
+        { "delta>five",       "twelve",    errorKeyExists },
+        { "delta>six",        "nine",      errorSuccess   },
+        { "delta>seven",      "ten",       errorSuccess   },
+        { "epsilon}eight",    "eight",     errorSuccess   },
+        { "epsilon}eight",    "seven",     errorKeyExists },
+        { "epsilon}seven",    "five",      errorSuccess   },
+        { "epsilon}seven",    "six",       errorKeyExists },
+        { "gamma]eight",      "four",      errorSuccess   },
+        { "gamma]eleven",     "one",       errorSuccess   },
+        { "gamma]nine",       "three",     errorSuccess   },
+        { "gamma]ten",        "two",       errorSuccess   },
+        { "missing",          NULL,        errorInvalidParameter },
         { NULL }
     };
 
@@ -43,43 +43,50 @@ int main( int argc, char * argv[] )
     fprintf( stderr, "%p\n", trie );
     if ( trie == NULL ) return -1;
 
+    fprintf( stderr, "\n### populate tree\n");
     for ( unsigned int i = 0; testData[i].key != NULL; i++ )
     {
-        testData[i].err = errorSuccess;
         if ( testData[i].value != NULL )
         {
-            void * value = (void *)testData[i].value;
-            testData[i].err = stringTrieAdd( trie, testData[i].key, &value );
-            if ( testData[i].err != errorSuccess )
+            tTrieValue * value = (void *)testData[i].value;
+            tStringTrieError err = stringTrieAdd( trie, testData[i].key, &value );
+            if ( testData[i].err != err )
             {
-                fprintf( stderr, "### error: stringTrieAdd( trie, \"%s\", \"%s\" ) returned \'%s\'\n",
+                fprintf( stderr, "### unexpected error: stringTrieAdd( trie, \"%s\", \"%s\" ) returned \'%s\'\n",
                          testData[i].key, testData[i].value, describeStringTrieError(testData[i].err) );
             }
         }
     }
 
+    fprintf( stderr, "\n### tree dump\n");
     setStringTrieDumpValue( trie, stringTrieDumpStringValue );
     stringTrieDump( trie, NULL );
 
+    fprintf( stderr, "\n### iterator test\n");
+    tStringTrieIterator * iterator = newTrieIterator( trie, NULL );
+    tTrieValue * value;
+    do {
+        value = trieIteratorNext( iterator );
+    } while (value != NULL);
+    freeTrieInterator( iterator );
+
+
+    fprintf( stderr, "\n### retreval test\n");
     for (unsigned int i = 0; testData[i].key != NULL; i++)
     {
-        /* only retrieve the keys that were added successfully */
-//      if ( testData[i].err == errorSuccess )
+        char * value;
+        tStringTrieError err = stringTrieGet( trie, testData[i].key, (tTrieValue **)&value );
+        if ( err == errorSuccess )
         {
-            char * value;
-            tStringTrieError err = stringTrieGet( trie, testData[i].key, (void **)&value );
-            if ( err == errorSuccess )
-            {
-                if ( strcmp( value, testData[i].value ) == 0 ) {
-                    fprintf( stderr, "key \"%s\" has expected value \"%s\"\n", testData[i].key, value );
-                } else {
-                    fprintf( stderr, "key \"%s\" has value \"%s\", rather than expected value \"%s\"\n",
-                             testData[i].key, value, testData[i].value );
-                }
+            if ( strcmp( value, testData[i].value ) == 0 ) {
+                fprintf( stderr, "key \"%s\" has expected value \"%s\"\n", testData[i].key, value );
             } else {
-                fprintf( stderr, "### error: stringTrieGet( trie, \"%s\", &value ) returned \'%s\'\n",
-                         testData[i].key, describeStringTrieError(err) );
+                fprintf( stderr, "key \"%s\" has value \"%s\", rather than expected value \"%s\"\n",
+                         testData[i].key, value, testData[i].value );
             }
+        } else {
+            fprintf( stderr, "### error: stringTrieGet( trie, \"%s\", &value ) returned \'%s\'\n",
+                     testData[i].key, describeStringTrieError(err) );
         }
     }
 

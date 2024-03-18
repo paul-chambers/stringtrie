@@ -37,9 +37,10 @@ typedef struct sStringTrie {
 } tStringTrie;
 
 typedef struct sStringTrieIterator {
-    tStringTrie *         tree;
-    tSringSegmentLength   depth;
-    tTrieIndex *          stack;
+    tStringTrie *  tree;
+    unsigned int   depth;
+    unsigned int   stackSize;
+    tTrieIndex *   stack;
 } tStringTrieIterator;
 
 
@@ -52,7 +53,7 @@ const char * describeStringTrieError( tStringTrieError error )
         [errorKeyNotFound]       = "key not found"
     };
 
-    return ( error >= 0 && error < stringTrieErrorMax ?
+    return ( error < stringTrieErrorMax ?
              stringTrieErrorAsString[error] : "(value out of range)" );
 }
 
@@ -96,23 +97,90 @@ void freeStringTrie( tStringTrie * tree )
 }
 
 
-tStringTrieIterator * newTrieIterator( const char * path )
+tStringTrieIterator * newTrieIterator( tStringTrie * tree, const char * path )
 {
     tStringTrieIterator * iterator = calloc( 1, sizeof(tStringTrieIterator) );
 
     if ( iterator != NULL )
     {
-        iterator->stack = calloc( 8, sizeof(tTrieIndex) );
-        if ( iterator->stack != NULL )
-        {
+        iterator->stackSize = 16;
+        iterator->stack = calloc( iterator->stackSize, sizeof(tTrieIndex) );
+        if ( iterator->stack != NULL ) {
+            iterator->tree = tree;
             iterator->depth = 1;
-            iterator->stack[ iterator->depth ] = iterator->tree->nodeArray[rootIndex].children;;
+            iterator->stack[iterator->depth] = iterator->tree->nodeArray[rootIndex].children;;
         }
     }
 
     return iterator;
 }
 
+static void expandIteratorStack(tStringTrieIterator * iterator)
+{
+    unsigned int increment = (iterator->stackSize >> 2);
+    unsigned int newSize = iterator->stackSize + increment;
+
+    tTrieIndex * newStack = realloc(iterator->stack, newSize * sizeof(tTrieIndex));
+    if (newStack != NULL) {
+        memset( &newStack[iterator->stackSize], 0, increment * sizeof(tTrieIndex) );
+        iterator->stack     = newStack;
+        iterator->stackSize = newSize;
+    }
+}
+
+/**
+ * incrementally scan the radix tree, returning the next value on each call
+ * @param iterator
+ * @return the next tTrieValue stored in the tree
+ */
+tTrieValue * trieIteratorNext( tStringTrieIterator * iterator )
+{
+    static const char * leader = "........................................";
+    if ( iterator == NULL ) return NULL;
+
+    tTrieValue *  result = NULL;
+    tStringTrie * tree = iterator->tree;
+    tTrieIndex place;
+
+    while ( result == NULL ) { //
+        // keep walking through the tree until until we find a value.
+        place = iterator->stack[iterator->depth];
+
+        if ( tree->nodeArray[place].children != 0) {
+            // remember which node is next at this level before decending
+            iterator->stack[iterator->depth] = tree->nodeArray[place].next;
+            // decend to the children of this node (depth first traversal)
+            ++iterator->depth;
+            if ( iterator->depth >= iterator->stackSize ) {
+                expandIteratorStack(iterator);
+            }
+            place = tree->nodeArray[place].children;
+        } else if (tree->nodeArray[place].next != 0) {
+            // move to the next sibling at this depth
+            place = tree->nodeArray[place].next;
+        } else {
+            // no children below and no siblings left at this level, so pop the stack
+            do {
+                // if depth drops below 1, we've reached the top of the stack - we're done.
+                if (iterator->depth < 1) return NULL;
+                // pop up one level and continue
+                --iterator->depth;
+                place = iterator->stack[iterator->depth];
+            } while (place == 0);
+        }
+        iterator->stack[iterator->depth] = place;
+        result = tree->nodeArray[place].value;
+    }
+
+    fprintf(stderr, "%.*s[%u] = \'%s\'\n", iterator->depth, leader, place, (char *)result );
+
+    return result;
+}
+
+/**
+ * 
+ * @param iterator
+ */
 void freeTrieInterator( tStringTrieIterator * iterator )
 {
     if ( iterator != NULL )
@@ -123,29 +191,6 @@ void freeTrieInterator( tStringTrieIterator * iterator )
         }
         free( iterator );
     }
-}
-/**
- * incrementally scan the radix tree, returning the next value on each call
- * @param iterator
- * @return the next tTrieValue stored in the tree
- */
-tTrieValue * stringTrieNext( tStringTrieIterator * iterator )
-{
-    if ( iterator == NULL ) return NULL;
-
-    tTrieIndex siblings = iterator->stack[ iterator->depth ];
-    if ( siblings == 0 )
-    {
-        // pop up one level and process the next
-        // if depth drops below 1, we're done.
-    }
-    else
-    {
-        // if the current sibling has a value, that's the next value to return
-        // decend to the current sibling's children (depth first traversal)
-        // if the child doesn't have a value, keep decending until one is found.
-    }
-    return NULL;
 }
 
 void setStringTrieDumpValue( tStringTrie * tree, cbStringTrieDumpValue valueCB )
@@ -160,7 +205,7 @@ int stringTrieDumpStringValue( const tStringTrie * tree,
                                        size_t outputStringBufferSize,
                                        tTrieOpaque * opaque )
 {
-    strncpy( outputStringBuffer, value, outputStringBufferSize );
+    strncpy( outputStringBuffer, (char *)value, outputStringBufferSize );
     return (0);
 }
 
@@ -378,7 +423,6 @@ static void guaranteeStringSpace( tStringTrie * tree, tSringSegmentLength length
 // and create a new child node for the trailing part that didn't match.
 static tStringTrieError splitNode( tStringTrie * tree, tTrieIndex originalNodeIndex, tSringSegmentLength matchLen )
 {
-
     /* make the code easier to read (and help the compiler) */
     tTrieNode * prefixNode = &tree->nodeArray[originalNodeIndex];
 
@@ -399,10 +443,6 @@ static tStringTrieError splitNode( tStringTrie * tree, tTrieIndex originalNodeIn
      * a prefix, and move any existing children from the existing node to the new suffix */
     suffixNode->children = prefixNode->children;
     prefixNode->children = newNodeIndex;
-    /* existing node becomes the parent of the new node */
-//  suffixNode->parent   = originalNodeIndex;
-    /* update all the existing children to have the new node be their parent */
-//  for ( tTrieIndex child = suffixNode->children; child != 0; child = tree->nodeArray[child].next ) { }
 
     logDebug("split node:  [%02u] \'%.*s\' | [%02u] \'%.*s\'",
              originalNodeIndex, prefixNode->length, &tree->stringSpace[prefixNode->start],
@@ -424,7 +464,6 @@ static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, co
     tTrieNode * newNode = &tree->nodeArray[newNodeIndex];
 
     // set up the new node
-//  newNode->parent  = parentIndex;
     newNode->start   = tree->highWater;
     newNode->length  = length;
     newNode->value   = value;
@@ -432,7 +471,6 @@ static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, co
     memcpy( &tree->stringSpace[newNode->start], key, length );
 
     // add this new node to the front of the parent's list of children
-    // newNode->children = 0; // not needed - free nodes are always zeroed.
     newNode->next = tree->nodeArray[parentIndex].children;
     tree->nodeArray[parentIndex].children = newNodeIndex;
 
@@ -515,7 +553,7 @@ tStringTrieError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieV
             if ( tree->nodeArray[nodeIndex].children == 0 )
             {
                 // no children below this point, so add the key remainder as the first child of this node
-                return addChild( tree, nodeIndex, k, value );
+                return addChild( tree, nodeIndex, k, *value );
             }
             else
             {

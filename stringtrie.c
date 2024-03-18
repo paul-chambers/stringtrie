@@ -17,7 +17,7 @@ typedef struct {
     tStringSegmentOffset    start;          // start of string segment
     tSringSegmentLength     length;         // string segment length
 
-    tTrieValue *            value;          // the associated value, if this is the tail of an exact match
+    tTrieValue              value;          // the associated value, if this is the tail of an exact match
 } tTrieNode;
 
 enum tConstRadixIndex {
@@ -133,12 +133,12 @@ static void expandIteratorStack(tStringTrieIterator * iterator)
  * @param iterator
  * @return the next tTrieValue stored in the tree
  */
-tTrieValue * trieIteratorNext( tStringTrieIterator * iterator )
+tTrieValue trieIteratorNext( tStringTrieIterator * iterator )
 {
     static const char * leader = "........................................";
     if ( iterator == NULL ) return NULL;
 
-    tTrieValue *  result = NULL;
+    tTrieValue result = NULL;
     tStringTrie * tree = iterator->tree;
     tTrieIndex place;
 
@@ -200,7 +200,7 @@ void setStringTrieDumpValue( tStringTrie * tree, cbStringTrieDumpValue valueCB )
 
 
 int stringTrieDumpStringValue( const tStringTrie * tree,
-                                       tTrieValue * value,
+                                       tTrieValue value,
                                        char * outputStringBuffer,
                                        size_t outputStringBufferSize,
                                        tTrieOpaque * opaque )
@@ -210,12 +210,12 @@ int stringTrieDumpStringValue( const tStringTrie * tree,
 }
 
 int stringTrieDumpIntValue( const tStringTrie * tree,
-                            tTrieValue * value,
+                            tTrieValue value,
                             char * outputStringBuffer,
                             size_t outputStringBufferSize,
                             tTrieOpaque * opaque )
 {
-    snprintf( outputStringBuffer, outputStringBufferSize, "%d", *(int *)value );
+    snprintf( outputStringBuffer, outputStringBufferSize, "%d", (int)value );
     return (0);
 }
 
@@ -451,7 +451,7 @@ static tStringTrieError splitNode( tStringTrie * tree, tTrieIndex originalNodeIn
     return errorSuccess;
 }
 
-static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, const tTrieKey * key, tTrieValue * value )
+static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, const tTrieKey * key, tTrieValue value )
 {
     tTrieIndex newNodeIndex;
 
@@ -477,7 +477,7 @@ static tStringTrieError addChild( tStringTrie * tree, tTrieIndex parentIndex, co
     return errorSuccess;
 }
 
-tStringTrieError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value )
+tStringTrieError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * value )
 {
     tTrieIndex nodeIndex = tree->nodeArray[rootIndex].children;
     // handle adding the first child of the root - i.e. the
@@ -567,7 +567,7 @@ tStringTrieError stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieV
     return errorInvalidParameter;
 }
 
-tStringTrieError stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value )
+tStringTrieError stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue * value )
 {
     tTrieIndex nodeIndex = tree->nodeArray[rootIndex].children;
 

@@ -48,7 +48,7 @@ int main( int argc, char * argv[] )
     {
         if ( testData[i].value != NULL )
         {
-            tTrieValue * value = (void *)testData[i].value;
+            tTrieValue value = (tTrieValue)testData[i].value;
             tStringTrieError err = stringTrieAdd( trie, testData[i].key, &value );
             if ( testData[i].err != err )
             {
@@ -64,7 +64,7 @@ int main( int argc, char * argv[] )
 
     fprintf( stderr, "\n### iterator test\n");
     tStringTrieIterator * iterator = newTrieIterator( trie, NULL );
-    tTrieValue * value;
+    tTrieValue value;
     do {
         value = trieIteratorNext( iterator );
     } while (value != NULL);
@@ -75,7 +75,7 @@ int main( int argc, char * argv[] )
     for (unsigned int i = 0; testData[i].key != NULL; i++)
     {
         char * value;
-        tStringTrieError err = stringTrieGet( trie, testData[i].key, (tTrieValue **)&value );
+        tStringTrieError err = stringTrieGet( trie, testData[i].key, (tTrieValue *)&value );
         if ( err == errorSuccess )
         {
             if ( strcmp( value, testData[i].value ) == 0 ) {

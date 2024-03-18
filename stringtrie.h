@@ -13,7 +13,7 @@ typedef unsigned short  tSringSegmentLength;    // length of the string segment 
 typedef unsigned short  tTrieNodeCount;
 typedef unsigned short  tTrieIndex;         // index into nodeArray
 typedef char            tTrieKey;           // a C-style string
-typedef int             tTrieValue;         // a pointer to some arbitrary data structure
+typedef struct {} *     tTrieValue;         // a pointer to some arbitrary data structure
 typedef void            tTrieOpaque;        // for user-supplied private value, passed to callback
 
 typedef struct sStringTrie tStringTrie;
@@ -31,27 +31,27 @@ const char * describeStringTrieError( tStringTrieError error );
 
 tStringTrie *       newStringTrie( void );
 void                freeStringTrie( tStringTrie * tree );
-tStringTrieError    stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value );
-tStringTrieError    stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue ** value );
+tStringTrieError    stringTrieAdd( tStringTrie * tree, const tTrieKey * key, tTrieValue * value );
+tStringTrieError    stringTrieGet( tStringTrie * tree, const tTrieKey * key, tTrieValue * value );
 
 tStringTrieIterator *   newTrieIterator( tStringTrie * tree, const char * path );
 void                    freeTrieInterator( tStringTrieIterator * iterator );
-tTrieValue *            trieIteratorNext( tStringTrieIterator * iterator );
+tTrieValue              trieIteratorNext( tStringTrieIterator * iterator );
 
 typedef int (* cbStringTrieDumpValue)( const tStringTrie * tree,
-                                       tTrieValue * value,
+                                       tTrieValue value,
                                        char * outputStringBuffer,
                                        size_t outputStringBufferSize,
                                        tTrieOpaque * opaque );
 
 int stringTrieDumpStringValue( const tStringTrie * tree,
-                               tTrieValue * value,
+                               tTrieValue value,
                                char * outputStringBuffer,
                                size_t outputStringBufferSize,
                                tTrieOpaque * opaque );
 
 int stringTrieDumpIntValue(    const tStringTrie * tree,
-                               tTrieValue * value,
+                               tTrieValue value,
                                char * outputStringBuffer,
                                size_t outputStringBufferSize,
                                tTrieOpaque * opaque );
